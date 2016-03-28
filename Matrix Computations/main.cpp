@@ -232,6 +232,4 @@ int main(int argc, char *argv[]) {
     FILE *file[3];
     readArg(argc, argv, file);
     SPIKE(file, argv);
-
-
 }
