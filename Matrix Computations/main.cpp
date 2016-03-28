@@ -6,9 +6,7 @@
 #include "mkl.h"
 #include "MatLib.hpp"
 
-
 typedef double FLOAT_TYPE;
-
 
 /* Parallelism in the Spike Algorithm to Solve A X = F 
  * where A is a banded nonsingular matrix of order N, e.g. 1 M
