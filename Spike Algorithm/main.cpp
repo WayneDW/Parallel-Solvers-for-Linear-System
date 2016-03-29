@@ -10,13 +10,39 @@
 typedef double FLOAT_TYPE;
 
 
-/* Parallelism in the Spike Algorithm to Solve A X = F 
- * where A is a banded nonsingular matrix of order N, e.g. 1 M
- * reference : Parallelism in Matrix Computations, Page 96 */
+/* ******************************************************************
+ * 
+ * Parallelism in the Spike Algorithm to Solve A X = F 
+ * where A is a banded nonsingular matrix of order N
+ * with A of order 10K and 8 nodes, X can be solved within 2s. 
+ * 
+ * For reference : Parallelism in Matrix Computations, Page 96
+ * For band storage, see the following
+ * https://software.intel.com/en-us/node/471382#BAND
+ * https://software.intel.com/en-us/node/520871#BAND_STORAGE
+ *
+ *
+ * In this routine, different rows are read by different nodes.
+ * We will also transform the following reduced matrix to a band one
+ *     |  I  V1b          |             |           V2t  |
+ * S = | W2t  I       V2t |  -> band_S  |      V1b  V2b  |
+ *     | W2b     I    V2b |             |  I    I    I   |
+ *     |        W3t    I  |             | W2t            |
+ *                                      | W2b            |
+ *
+ * Author: Wei Deng
+ * Date: Mar. 29 / 2016
+ * email: greyman@live.cn 
+ *
+ * *******************************************************************/
+
+
+
+// Take care, if subDiag != supDiag, this function needs minor revisions
 
 int SPIKE(FILE *file[3], char *argv[]) {
     int core, id, nthreads, chunk, loc;
-    int local_col, dest, blockID, tmp;
+    int local_col, dim_bands, blockID, tmp;
     int dim, dim_s, len, supDiag, subDiag;
     int i, j, k, p, q, m, n, tag;
     long long *pivot[2];
@@ -27,10 +53,10 @@ int SPIKE(FILE *file[3], char *argv[]) {
     MPI_Comm_rank (MPI_COMM_WORLD, &id);
     MPI_Comm_size (MPI_COMM_WORLD, &core);
 
-    // Def Num : 0 -> Top, 1 -> Mid, 2 -> Bot
+    // Def: 0 as Top, 1 as Mid, 2 as Bot
     FLOAT_TYPE *V[core][3], *W[core][3], *G[core][3];
-    FLOAT_TYPE *A, *B, *C, *F, *S, *X, *X_i;
-    FLOAT_TYPE *Solution, t1, t2, t3, t4, t5;
+    FLOAT_TYPE *A, *B, *C, *F, *band_S, *X, *X_i;
+    FLOAT_TYPE *Solution, t1, t2, t3, t4, t5, value;
    
     // Get the Width of the Band Matrix
     if (id == core - 1) {
@@ -56,13 +82,14 @@ int SPIKE(FILE *file[3], char *argv[]) {
 
     dim_s = (supDiag + subDiag) * (core - 1);
     if (id == core - 1) {
-        S = new FLOAT_TYPE[dim_s * dim_s]();
+        // The reduced matrix S will be saved as band matrix
+        dim_bands = 2 * supDiag + subDiag - 1;
+        band_S = new FLOAT_TYPE[(3 * dim_bands + 1) * dim_s]();
         Solution = new FLOAT_TYPE[dim * core];
         pivot[1] = new long long[dim_s];
     }
     X = new FLOAT_TYPE[dim_s];
 
-    // Take care this part;
     for (i = 0; i < 3; i++) {
         tmp = ((i == 1) ? MAX((dim - 2 * supDiag), 0) : supDiag);
         // Initialize X/V/W/G top/mid/bot for all nodes
@@ -85,7 +112,7 @@ int SPIKE(FILE *file[3], char *argv[]) {
         printf("Step 1. Spike Factorization Stage, ");
         t1 = omp_get_wtime();
     }
-    // LU factor Aj
+    // Band LU factor Aj
     LAPACKE_dgbtrf (LAPACK_COL_MAJOR, dim, dim , subDiag, supDiag, A, supDiag + 2 * subDiag + 1, pivot[0]);
     // Solve Vj from Aj * Vj = [B'j], B'j = [0,...,Bj]T
     if (id != core - 1) {
@@ -103,11 +130,11 @@ int SPIKE(FILE *file[3], char *argv[]) {
     //  *****************************  Step 2.1. Solve D G = F, F -> G  ***********************************************
     if (id == core - 1) {
         t2 = omp_get_wtime();
-        printf("time used: %.3fs\nStep 2.1. Solve D G = F, ", t2 - t1);
+        printf("time used: %.3fs\nStep 2. Postprocessing Stage\nStep 2.1. Solve D G = F, ", t2 - t1);
     }
     LAPACKE_dgbtrs (LAPACK_COL_MAJOR, 'N', dim, subDiag, supDiag, 1, A, supDiag + 2 * subDiag + 1, pivot[0], F, dim);
-    // Take care, if subDiag != supDiag, this part may make mistake
     chooseRows(F, dim, 1, subDiag, dim - subDiag, G[id][0], G[id][1], G[id][2], id);
+
     delete[] pivot[0];
     delete[] A;
     delete[] B;
@@ -127,8 +154,6 @@ int SPIKE(FILE *file[3], char *argv[]) {
     // ******************************      Get the reduced solution X_local   *****************************************
     
     if (id == core - 1) {
-        t3 = omp_get_wtime();
-        
         for (i = 0; i < core - 1; i++) {
             for (j = 0; j < 3; j += 2) {
                 MPI_Recv(&G[i][j][0], supDiag, MPI_DOUBLE, i, i, MPI_COMM_WORLD, &status);
@@ -136,38 +161,44 @@ int SPIKE(FILE *file[3], char *argv[]) {
                 MPI_Recv(&W[i][j][0], supDiag * supDiag, MPI_DOUBLE, i, i, MPI_COMM_WORLD, &status);
             }
         }
-        
+        t3 = omp_get_wtime();
         printf("time used: %.3fs\nStep 2.2. Solve S X = G, ", t3 - t2);
+        
         for (j = 0; j < dim_s; j++) {
             for (i = 0; i < dim_s; i++) {
+                if ((i - j > dim_bands) || (j - i > dim_bands))
+                    continue;
                 m = i / subDiag;
                 n = j / subDiag;
                 p = i % subDiag + subDiag * (j % subDiag);
-                // We can speed up if we receive the data sequentially
                 if (i == j)
-                    S[j + i * dim_s] = 1;
+                    value = 1;
                 else if ((m % 2 == 0) && (n - m == 1))
-                    S[i + j * dim_s] = V[m / 2][2][p];
+                    value = V[m / 2][2][p];
                 else if (((m + 1) % 2 == 0) && (n - m == 2))
-                    S[i + j * dim_s] = V[(m + 1) / 2][0][p];
+                    value = V[(m + 1) / 2][0][p];
                 else if ((n % 2 == 0) && (m - n == 1))
-                    S[i + j * dim_s] = W[n / 2 + 1][0][p];
+                    value = W[n / 2 + 1][0][p];
                 else if ((n % 2 == 0) && (m - n == 2))
-                    S[i + j * dim_s] = W[n / 2 + 1][2][p];
+                    value = W[n / 2 + 1][2][p];
+                else
+                    continue;
+                band_S[i - j + dim_bands + j * (3 * dim_bands + 1) + dim_bands] = value;
             }
         }
-        // Factor S as L U
-        LAPACKE_dgetrf (LAPACK_COL_MAJOR, dim_s, dim_s, S, dim_s, pivot[1]);
-        // Solve S X = G, replace G with X
+        // Band LU factor S
+        LAPACKE_dgbtrf (LAPACK_COL_MAJOR, dim_s, dim_s, dim_bands, dim_bands, band_S, 3 * dim_bands + 1, pivot[1]);
+
+        // Factor Band S as L U
         for (i = 0; i < dim_s; i++) {
             blockID = (i / supDiag + 1) / 2;
             tmp = (((i / supDiag) % 2 == 1) ? 0 : 2);
             X[i] = G[blockID][tmp][i % supDiag];
         }
-
-        LAPACKE_dgetrs (LAPACK_COL_MAJOR, 'N', dim_s, 1, S, dim_s, pivot[1], X, dim_s);
+        // Solve S X = G, replace G with X
+        LAPACKE_dgbtrs (LAPACK_COL_MAJOR, 'N', dim_s, dim_bands, dim_bands, 1, band_S, 3 * dim_bands + 1, pivot[1], X, dim_s);
         delete[] pivot[1];
-        delete[] S;
+        delete[] band_S;
     }
     
     // Send X to all other nodes
@@ -232,6 +263,4 @@ int main(int argc, char *argv[]) {
     FILE *file[3];
     readArg(argc, argv, file);
     SPIKE(file, argv);
-
-
 }
