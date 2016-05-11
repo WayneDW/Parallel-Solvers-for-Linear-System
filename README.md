@@ -7,11 +7,7 @@ Implement a SPIKE-like algorithm to solve Lˆy = f, where Lˆ is a banded lower 
 
 Block LU Factorization with boosting
 Solve the dense linear system Ax = b using the approximate block LU Factorization algorithm with the procedure of ”diagonal boosting”1
-. Your code should be implemented using the MPI/OpenMP programming paradigm, and tested on eight nodes of the MC cluster. Let α be a multiple of the unit roundoff, e.g. 10−6, and aj be the jth column of the updated matrix A after step j − 1. In step j, if the diagonal pivot does not satisfy |pivot| > α||aj ||1, its value is ”boosted” as,
-
-pivot = pivot + β||aj ||1, if pivot > 0,
-pivot = pivot − β||aj ||1, if pivot < 0,
-where β is often taken as the square root of α.
+. Your code should be implemented using the MPI/OpenMP programming paradigm, and tested on eight nodes of the MC cluster. Let α be a multiple of the unit roundoff, e.g. 10−6, and aj be the jth column of the updated matrix A after step j − 1. In step j, if the diagonal pivot does not satisfy |pivot| > α||aj ||1, its value is ”boosted” as, pivot = pivot + β||aj ||1, if pivot > 0, pivot = pivot − β||aj ||1, if pivot < 0, where β is often taken as the square root of α.
 
 
 The Spike algorithm:
