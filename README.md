@@ -1,5 +1,7 @@
 # Parallelism-in-Matrix-Computations
 
+The following are 4 sections of codes to solve matrix computations of various types.
+
 Implement BBTS: Block banded triangular solver to solve Lx = b, where L is a banded lower triangular matrix with m subdiagonals.
 
 Implement a SPIKE-like algorithm to solve Lˆy = f, where Lˆ is a banded lower triangular matrix of order N = 32, 768 = 215, with t = 128 subdiagonals on a cluster of multicore nodes. Your code should be implemented using the MPI/OpenMP programming paradigm, and be tested on four nodes of the MC cluster. The SPIKE-like algorithm should be implemented using MPI. In this algorithm, use BBTS (from Part (a)) to solve the system involvings Lˆi.
