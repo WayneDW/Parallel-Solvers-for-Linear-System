@@ -1,7 +1,0 @@
-set LANGUAGE_TERRITORY="en_US"
-
-source /p/intel/bin/compilervars.sh intel64 
-
-export INTEL_MKL="/p/intel/mkl/"
-export INTEL_INC="$INTEL_MKL/include/"
-export INTEL_LIB="$INTEL_MKL/lib/intel64"
