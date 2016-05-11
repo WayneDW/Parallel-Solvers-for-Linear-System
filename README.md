@@ -1,6 +1,6 @@
 # Parallelism-in-Matrix-Computations
 
-The following are 4 sections of codes to solve matrix computations of various types.
+The following are 5 sections of codes to solve matrix computations of various types.
 
 Implement BBTS: Block banded triangular solver to solve Lx = b, where L is a banded lower triangular matrix with m subdiagonals.
 
