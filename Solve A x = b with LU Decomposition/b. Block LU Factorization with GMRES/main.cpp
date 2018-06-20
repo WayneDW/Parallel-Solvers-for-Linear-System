@@ -7,31 +7,31 @@
 #include "DenseMat.hpp"
 
 int main(int argc, char *argv[]) {
-	int core, id, nthreads, chunk, steps;
-	int local_col, dest, last, ori, tag, tmp;
-	int i, j, k, m, n, row, dim, round;
+    int core, id, nthreads, chunk, steps;
+    int local_col, dest, last, ori, tag, tmp;
+    int i, j, k, m, n, row, dim, round;
     long long *pivot;
-	FILE *file[3];
+    FILE *file[3];
 
-	MPI_Status status;
-	MPI_Init(&argc, &argv);
-	MPI_Comm_rank(MPI_COMM_WORLD, &id);
-	MPI_Comm_size(MPI_COMM_WORLD, &core);
+    MPI_Status status;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &id);
+    MPI_Comm_size(MPI_COMM_WORLD, &core);
 
     double *AA, *A, *b, *BlockA[core][core], *B[core], *x;
     double *G[core][core], *L[core][core], *U[core][core];
 
     tag = 0;
     chunk = 4;
-	readArg(argc, argv, file);
-	if (id == 0)    printf("Reading vector b\n");
-	b = readVector(file[1], &n);
-	if (id == 0)    printf("Reading matrix A\n");
-	AA = readMat(file[0], &row);
+    readArg(argc, argv, file);
+    if (id == 0)    printf("Reading vector b\n");
+    b = readVector(file[1], &n);
+    if (id == 0)    printf("Reading matrix A\n");
+    AA = readMat(file[0], &row);
     // didn't notice the matrix is saved by col, trans instead
     A = Trans(AA, row, row);
 
-	dim = row / core;
+    dim = row / core;
     pivot = new long long[dim];
     double  tic = omp_get_wtime();
     for (i = 0; i < dim; i++)
@@ -52,21 +52,21 @@ int main(int argc, char *argv[]) {
             //for (dest = tag + 1; dest < core; dest++) {
             for (dest = tag + 1; dest < core; dest++) {
                 if (round == 0) {
-	   		        BlockA[tag][dest] = Seg(A, row, dim, tag * dim * row + dest * dim, false);
-	    	        BlockA[id][dest] = Seg(A, row, dim, id * dim * row + dest * dim, false);
+                       BlockA[tag][dest] = Seg(A, row, dim, tag * dim * row + dest * dim, false);
+                    BlockA[id][dest] = Seg(A, row, dim, id * dim * row + dest * dim, false);
                 }
                 // Update A[id][id + 1], A[id][id + 2], ...
-    		    cblas_dgemm (CblasRowMajor, CblasNoTrans, CblasNoTrans, dim, dim, dim, -1,
-	    	    G[tag][id], dim, BlockA[tag][dest], dim, 1, BlockA[id][dest], dim);
-		    	// Update A[tag + 1 : core][tag + 1 : core]
+                cblas_dgemm (CblasRowMajor, CblasNoTrans, CblasNoTrans, dim, dim, dim, -1,
+                G[tag][id], dim, BlockA[tag][dest], dim, 1, BlockA[id][dest], dim);
+                // Update A[tag + 1 : core][tag + 1 : core]
                 for (k = tag + 1; k < core; k++) {
                     if (id != k)
                         BlockA[k][dest] = new double[dim * dim];
-        			MPI_Bcast(BlockA[k][dest], dim * dim, MPI_DOUBLE, k, MPI_COMM_WORLD);
+                    MPI_Bcast(BlockA[k][dest], dim * dim, MPI_DOUBLE, k, MPI_COMM_WORLD);
                 }
             }
             tag++;
-		}
+        }
     }
 
     // Show the iteration number
@@ -88,17 +88,17 @@ int main(int argc, char *argv[]) {
     //Get inv(A[id][id])
     LAPACKE_dgetri(CblasRowMajor, dim, BlockA[id][id], dim, pivot);
 
-	for (dest = id + 1; dest < core; dest++) {
+    for (dest = id + 1; dest < core; dest++) {
         if (id == 0) {
             BlockA[dest][id] = Seg(A, row, dim, dest * dim * row + id * dim, false);
             BlockA[id][dest] = Seg(A, row, dim, id * dim * row + dest * dim, false);
         }
-		G[id][dest] = new double[dim * dim];
-		// Solve G[id][j] = A[j][id] * inv(A[id][id])
-		cblas_dgemm (CblasRowMajor, CblasNoTrans, CblasNoTrans, dim, dim, dim, 1,
-		BlockA[dest][id], dim, BlockA[id][id], dim, 0, G[id][dest], dim);
+        G[id][dest] = new double[dim * dim];
+        // Solve G[id][j] = A[j][id] * inv(A[id][id])
+        cblas_dgemm (CblasRowMajor, CblasNoTrans, CblasNoTrans, dim, dim, dim, 1,
+        BlockA[dest][id], dim, BlockA[id][id], dim, 0, G[id][dest], dim);
 
-	    MPI_Send(&G[id][dest][0], dim * dim, MPI_DOUBLE, dest, tag * dim + dest, MPI_COMM_WORLD);
+        MPI_Send(&G[id][dest][0], dim * dim, MPI_DOUBLE, dest, tag * dim + dest, MPI_COMM_WORLD);
         // Change G[][] to element of Lower triangular matrix
         cblas_dtrmm (CblasRowMajor, CblasRight, CblasLower, CblasNoTrans, CblasUnit, dim, dim, 1, L[id][id], dim, G[id][dest], dim);
 
@@ -171,6 +171,6 @@ int main(int argc, char *argv[]) {
         fileWrite(file[2], x, row);
     }
 
-	MPI_Finalize();
-	return 0;
+    MPI_Finalize();
+    return 0;
 }
