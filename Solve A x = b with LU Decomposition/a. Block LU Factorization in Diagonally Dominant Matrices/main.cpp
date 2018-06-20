@@ -7,52 +7,52 @@
 #include "DenseMat.hpp"
 
 float *readMat(FILE *file, int *row, int *col) {
-	int i, m, n, len;
-	float value, *L;
-	for (i = 0; i < 2; i++)
-		fscanf(file, "%*[^\n]%*c");
-	fscanf(file, "%d %d", row, col);
-	L = new float[*row * *col]();
-	for (i = 0; i < *row * *col; i++) {
-		fscanf(file, "%f\n", &L[i]);
-	}
-	return L;
+    int i, m, n, len;
+    float value, *L;
+    for (i = 0; i < 2; i++)
+        fscanf(file, "%*[^\n]%*c");
+    fscanf(file, "%d %d", row, col);
+    L = new float[*row * *col]();
+    for (i = 0; i < *row * *col; i++) {
+        fscanf(file, "%f\n", &L[i]);
+    }
+    return L;
 }
 
 // type: true for vec, false for square matrix split
 float *Seg(float *vec, int dim, int n, int i0, char type) {
-	int i, j, m, tmp;
-	float *val;
-	if (type == true) {
-		val = new float[n];
-		for (i = 0; i < n; i++)
-			val[i] = vec[i0 + i];
-	}
-	else {
-		val = new float[n * n];
-		for (i = 0; i < n; i++) {
-			tmp = i0 + i * dim;
-			for (j = 0; j < n; j++)
-				val[j + n * i] = vec[tmp + j];
-		}
-	}
-	return val;
+    int i, j, m, tmp;
+    float *val;
+    if (type == true) {
+        val = new float[n];
+        for (i = 0; i < n; i++)
+            val[i] = vec[i0 + i];
+    }
+    else {
+        val = new float[n * n];
+        for (i = 0; i < n; i++) {
+            tmp = i0 + i * dim;
+            for (j = 0; j < n; j++)
+                val[j + n * i] = vec[tmp + j];
+        }
+    }
+    return val;
 }
 
 void getLU(float *vec, int dim, float *L, float *U) {
-	int i, j;
-	for (i = 0; i < dim; i++) {
-		for (j = 0; j < dim; j++) {
-			if (i == j) {
-				L[j * dim + j] = 1;
-				U[i * dim + j] = vec[j * dim + j];
-			}
-			else if (i > j)
-				L[j + i * dim] = vec[j + i * dim];
-			else
-				U[j + i * dim] = vec[j + i * dim];
-		}
-	}
+    int i, j;
+    for (i = 0; i < dim; i++) {
+        for (j = 0; j < dim; j++) {
+            if (i == j) {
+                L[j * dim + j] = 1;
+                U[i * dim + j] = vec[j * dim + j];
+            }
+            else if (i > j)
+                L[j + i * dim] = vec[j + i * dim];
+            else
+                U[j + i * dim] = vec[j + i * dim];
+        }
+    }
 }
 
 float *Trans(float *A, int m, int n) {
@@ -99,31 +99,31 @@ void matLU(float *A, int m, int tag, int chunk) {
 }
 
 int main(int argc, char *argv[]) {
-	int core, id, nthreads, chunk;
-	int local_col, dest, last, ori, tag, tmp;
-	int i, j, k, m, n, row, col, dim, round;
+    int core, id, nthreads, chunk;
+    int local_col, dest, last, ori, tag, tmp;
+    int i, j, k, m, n, row, col, dim, round;
     long long *pivot;
-	FILE *file[3];
+    FILE *file[3];
 
-	MPI_Status status;
-	MPI_Init(&argc, &argv);
-	MPI_Comm_rank(MPI_COMM_WORLD, &id);
-	MPI_Comm_size(MPI_COMM_WORLD, &core);
+    MPI_Status status;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &id);
+    MPI_Comm_size(MPI_COMM_WORLD, &core);
 
     float *AA, *A, *b, *BlockA[core][core], *B[core], *x;
     float *G[core][core], *Bak[core][core], *L[core][core], *U[core][core];
 
     tag = 0;
     chunk = 4;
-	readArg(argc, argv, file);
-	if (id == 0)    printf("Reading vector b\n");
-	b = readVector(file[1], &n);
-	if (id == 0)    printf("Reading matrix A\n");
-	A = readMat(file[0], &row, &col);
+    readArg(argc, argv, file);
+    if (id == 0)    printf("Reading vector b\n");
+    b = readVector(file[1], &n);
+    if (id == 0)    printf("Reading matrix A\n");
+    A = readMat(file[0], &row, &col);
     // didn't notice the matrix is saved by col, trans instead
     //A = Trans(AA, row, col);
 
-	dim = row / core;
+    dim = row / core;
     pivot = new long long[dim];
     double  tic = omp_get_wtime();
 
@@ -141,21 +141,21 @@ int main(int argc, char *argv[]) {
             //for (dest = tag + 1; dest < core; dest++) {
             for (dest = tag + 1; dest < core; dest++) {
                 if (round == 0) {
-	   		        BlockA[tag][dest] = Seg(A, row, dim, tag * dim * row + dest * dim, false);
-	    	        BlockA[id][dest] = Seg(A, row, dim, id * dim * row + dest * dim, false);
+                       BlockA[tag][dest] = Seg(A, row, dim, tag * dim * row + dest * dim, false);
+                    BlockA[id][dest] = Seg(A, row, dim, id * dim * row + dest * dim, false);
                 }
                 // Update A[id][id + 1], A[id][id + 2], ...
-    		    cblas_sgemm (CblasRowMajor, CblasNoTrans, CblasNoTrans, dim, dim, dim, -1,
-	    	    G[tag][id], dim, BlockA[tag][dest], dim, 1, BlockA[id][dest], dim);
-		    	// Update A[tag + 1 : core][tag + 1 : core]
+                cblas_sgemm (CblasRowMajor, CblasNoTrans, CblasNoTrans, dim, dim, dim, -1,
+                G[tag][id], dim, BlockA[tag][dest], dim, 1, BlockA[id][dest], dim);
+                // Update A[tag + 1 : core][tag + 1 : core]
                 for (k = tag + 1; k < core; k++) {
                     if (id != k)
                         BlockA[k][dest] = new float[dim * dim];
-        			MPI_Bcast(BlockA[k][dest], dim * dim, MPI_FLOAT, k, MPI_COMM_WORLD);
+                    MPI_Bcast(BlockA[k][dest], dim * dim, MPI_FLOAT, k, MPI_COMM_WORLD);
                 }
             }
             tag++;
-		}
+        }
     }
     // Copy BlockA to Bak
     Bak[id][id] = new float[dim * dim];
@@ -168,22 +168,22 @@ int main(int argc, char *argv[]) {
     U[id][id] = new float[dim * dim]();
     getLU(Bak[id][id], dim, L[id][id], U[id][id]);
 
-	// LU factorization for A[id][id]
+    // LU factorization for A[id][id]
     LAPACKE_sgetrf (CblasRowMajor, dim, dim, BlockA[id][id], dim, pivot);
-	//Get inv(A[id][id])
-	LAPACKE_sgetri(CblasRowMajor, dim, BlockA[id][id], dim, pivot);
+    //Get inv(A[id][id])
+    LAPACKE_sgetri(CblasRowMajor, dim, BlockA[id][id], dim, pivot);
 
-	for (dest = id + 1; dest < core; dest++) {
+    for (dest = id + 1; dest < core; dest++) {
         if (id == 0) {
             BlockA[dest][id] = Seg(A, row, dim, dest * dim * row + id * dim, false);
             BlockA[id][dest] = Seg(A, row, dim, id * dim * row + dest * dim, false);
         }
-		G[id][dest] = new float[dim * dim];
-		// Solve G[id][j] = A[j][id] * inv(A[id][id])
-		cblas_sgemm (CblasRowMajor, CblasNoTrans, CblasNoTrans, dim, dim, dim, 1,
-		BlockA[dest][id], dim, BlockA[id][id], dim, 0, G[id][dest], dim);
+        G[id][dest] = new float[dim * dim];
+        // Solve G[id][j] = A[j][id] * inv(A[id][id])
+        cblas_sgemm (CblasRowMajor, CblasNoTrans, CblasNoTrans, dim, dim, dim, 1,
+        BlockA[dest][id], dim, BlockA[id][id], dim, 0, G[id][dest], dim);
 
-	    MPI_Send(&G[id][dest][0], dim * dim, MPI_FLOAT, dest, tag * dim + dest, MPI_COMM_WORLD);
+        MPI_Send(&G[id][dest][0], dim * dim, MPI_FLOAT, dest, tag * dim + dest, MPI_COMM_WORLD);
         // Change G[][] to element of Lower triangular matrix
         cblas_strmm (CblasRowMajor, CblasRight, CblasLower, CblasNoTrans, CblasUnit, dim, dim, 1, L[id][id], dim, G[id][dest], dim);
 
@@ -256,6 +256,6 @@ int main(int argc, char *argv[]) {
         fileWrite(file[2], x, col);
     }
 
-	MPI_Finalize();
-	return 0;
+    MPI_Finalize();
+    return 0;
 }
