@@ -1,6 +1,6 @@
 # Parallelism-in-Matrix-Computations
 
-This repository contains 5 sections of programs to solve various matrix computation problems. The following is based on the MPI/OpenMP programming paradigm, and were tested on four (or eight) nodes of the MC cluster.
+This repository contains 5 sections of programs to solve various matrix computation problems. The following is based on the MPI/OpenMP programming paradigm, and was tested on four nodes of the MC cluster.
 
 ### 1. Implement BBTS
 
